@@ -27,7 +27,7 @@ func (r *Registry) loadServices(file *File) error {
 			glog.V(2).Infof("Processing %s.%s", sd.GetName(), md.GetName())
 			opts, err := extractAPIOptions(md)
 			if err != nil {
-				glog.Errorf("Failed to extract ApiMethodOptions from %s.%s: %v", svc.GetName(), md.GetName(), err)
+				glog.Errorf("Failed to extract HttpRule from %s.%s: %v", svc.GetName(), md.GetName(), err)
 				return err
 			}
 			if opts == nil {
@@ -183,7 +183,7 @@ func extractAPIOptions(meth *descriptor.MethodDescriptorProto) (*options.HttpRul
 
 func (r *Registry) newParam(meth *Method, path string) (Parameter, error) {
 	msg := meth.RequestType
-	fields, err := r.resolveFiledPath(msg, path)
+	fields, err := r.resolveFieldPath(msg, path)
 	if err != nil {
 		return Parameter{}, err
 	}
@@ -216,7 +216,7 @@ func (r *Registry) newBody(meth *Method, path string) (*Body, error) {
 	case "*":
 		return &Body{FieldPath: nil}, nil
 	}
-	fields, err := r.resolveFiledPath(msg, path)
+	fields, err := r.resolveFieldPath(msg, path)
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +235,7 @@ func lookupField(msg *Message, name string) *Field {
 }
 
 // resolveFieldPath resolves "path" into a list of fieldDescriptor, starting from "msg".
-func (r *Registry) resolveFiledPath(msg *Message, path string) ([]FieldPathComponent, error) {
+func (r *Registry) resolveFieldPath(msg *Message, path string) ([]FieldPathComponent, error) {
 	if path == "" {
 		return nil, nil
 	}
