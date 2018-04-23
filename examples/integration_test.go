@@ -14,13 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"context"
+
 	"github.com/golang/protobuf/jsonpb"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
 	gw "github.com/grpc-ecosystem/grpc-gateway/examples/examplepb"
 	sub "github.com/grpc-ecosystem/grpc-gateway/examples/sub"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 )
 
@@ -41,8 +42,13 @@ func TestEcho(t *testing.T) {
 }
 
 func TestForwardResponseOption(t *testing.T) {
+	ctx := context.Background()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	go func() {
 		if err := Run(
+			ctx,
 			":8081",
 			runtime.WithForwardResponseOption(
 				func(_ context.Context, w http.ResponseWriter, _ proto.Message) error {
@@ -668,6 +674,20 @@ func testAdditionalBindings(t *testing.T, port int) {
 			return resp
 		},
 		func() *http.Response {
+			r, w := io.Pipe()
+			go func() {
+				defer w.Close()
+				w.Write([]byte(`"hello"`))
+			}()
+			url := fmt.Sprintf("http://localhost:%d/v2/example/echo", port)
+			resp, err := http.Post(url, "application/json", r)
+			if err != nil {
+				t.Errorf("http.Post(%q, %q, %q) failed with %v; want success", url, "application/json", `"hello"`, err)
+				return nil
+			}
+			return resp
+		},
+		func() *http.Response {
 			url := fmt.Sprintf("http://localhost:%d/v2/example/echo?value=hello", port)
 			resp, err := http.Get(url)
 			if err != nil {
@@ -719,7 +739,7 @@ func TestTimeout(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	if got, want := resp.StatusCode, http.StatusRequestTimeout; got != want {
+	if got, want := resp.StatusCode, http.StatusGatewayTimeout; got != want {
 		t.Errorf("resp.StatusCode = %d; want %d", got, want)
 	}
 }
