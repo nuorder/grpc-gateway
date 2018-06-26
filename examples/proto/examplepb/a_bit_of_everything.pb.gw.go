@@ -540,14 +540,14 @@ func RegisterABitOfEverythingServiceHandlerFromEndpoint(ctx context.Context, mux
 	defer func() {
 		if err != nil {
 			if cerr := conn.Close(); cerr != nil {
-				grpclog.Printf("Failed to close conn to %s: %v", endpoint, cerr)
+				grpclog.Infof("Failed to close conn to %s: %v", endpoint, cerr)
 			}
 			return
 		}
 		go func() {
 			<-ctx.Done()
 			if cerr := conn.Close(); cerr != nil {
-				grpclog.Printf("Failed to close conn to %s: %v", endpoint, cerr)
+				grpclog.Infof("Failed to close conn to %s: %v", endpoint, cerr)
 			}
 		}()
 	}()
@@ -561,8 +561,8 @@ func RegisterABitOfEverythingServiceHandler(ctx context.Context, mux *runtime.Se
 	return RegisterABitOfEverythingServiceHandlerClient(ctx, mux, NewABitOfEverythingServiceClient(conn))
 }
 
-// RegisterABitOfEverythingServiceHandler registers the http handlers for service ABitOfEverythingService to "mux".
-// The handlers forward requests to the grpc endpoint over the given implementation of "ABitOfEverythingServiceClient".
+// RegisterABitOfEverythingServiceHandlerClient registers the http handlers for service ABitOfEverythingService
+// to "mux". The handlers forward requests to the grpc endpoint over the given implementation of "ABitOfEverythingServiceClient".
 // Note: the gRPC framework executes interceptors within the gRPC handler. If the passed in "ABitOfEverythingServiceClient"
 // doesn't go through the normal gRPC flow (creating a gRPC client etc.) then it will be up to the passed in
 // "ABitOfEverythingServiceClient" to call the correct interceptors.
@@ -1047,14 +1047,14 @@ func RegisterCamelCaseServiceNameHandlerFromEndpoint(ctx context.Context, mux *r
 	defer func() {
 		if err != nil {
 			if cerr := conn.Close(); cerr != nil {
-				grpclog.Printf("Failed to close conn to %s: %v", endpoint, cerr)
+				grpclog.Infof("Failed to close conn to %s: %v", endpoint, cerr)
 			}
 			return
 		}
 		go func() {
 			<-ctx.Done()
 			if cerr := conn.Close(); cerr != nil {
-				grpclog.Printf("Failed to close conn to %s: %v", endpoint, cerr)
+				grpclog.Infof("Failed to close conn to %s: %v", endpoint, cerr)
 			}
 		}()
 	}()
@@ -1068,8 +1068,8 @@ func RegisterCamelCaseServiceNameHandler(ctx context.Context, mux *runtime.Serve
 	return RegisterCamelCaseServiceNameHandlerClient(ctx, mux, NewCamelCaseServiceNameClient(conn))
 }
 
-// RegisterCamelCaseServiceNameHandler registers the http handlers for service CamelCaseServiceName to "mux".
-// The handlers forward requests to the grpc endpoint over the given implementation of "CamelCaseServiceNameClient".
+// RegisterCamelCaseServiceNameHandlerClient registers the http handlers for service CamelCaseServiceName
+// to "mux". The handlers forward requests to the grpc endpoint over the given implementation of "CamelCaseServiceNameClient".
 // Note: the gRPC framework executes interceptors within the gRPC handler. If the passed in "CamelCaseServiceNameClient"
 // doesn't go through the normal gRPC flow (creating a gRPC client etc.) then it will be up to the passed in
 // "CamelCaseServiceNameClient" to call the correct interceptors.
