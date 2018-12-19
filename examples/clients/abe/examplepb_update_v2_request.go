@@ -10,6 +10,9 @@
 
 package abe
 
-// service Foo {       rpc Bar(google.protobuf.Empty) returns (google.protobuf.Empty);     }  The JSON representation for `Empty` is empty JSON object `{}`.
-type ProtobufEmpty struct {
+type ExamplepbUpdateV2Request struct {
+
+	Abe ExamplepbABitOfEverything `json:"abe,omitempty"`
+
+	UpdateMask ProtobufFieldMask `json:"update_mask,omitempty"`
 }
