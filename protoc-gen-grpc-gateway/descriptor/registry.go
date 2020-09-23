@@ -40,6 +40,65 @@ type Registry struct {
 
 	// externalHttpRules is a mapping from fully qualified service method names to additional HttpRules applicable besides the ones found in annotations.
 	externalHTTPRules map[string][]*annotations.HttpRule
+
+	// allowMerge generation one swagger file out of multiple protos
+	allowMerge bool
+
+	// mergeFileName target swagger file name after merge
+	mergeFileName string
+
+	// allowRepeatedFieldsInBody permits repeated field in body field path of `google.api.http` annotation option
+	allowRepeatedFieldsInBody bool
+
+	// includePackageInTags controls whether the package name defined in the `package` directive
+	// in the proto file can be prepended to the gRPC service name in the `Tags` field of every operation.
+	includePackageInTags bool
+
+	// repeatedPathParamSeparator specifies how path parameter repeated fields are separated
+	repeatedPathParamSeparator repeatedFieldSeparator
+
+	// useJSONNamesForFields if true json tag name is used for generating fields in swagger definitions,
+	// otherwise the original proto name is used. It's helpful for synchronizing the swagger definition
+	// with grpc-gateway response, if it uses json tags for marshaling.
+	useJSONNamesForFields bool
+
+	// useFQNForSwaggerName if true swagger names will use the full qualified name (FQN) from proto definition,
+	// and generate a dot-separated swagger name concatenating all elements from the proto FQN.
+	// If false, the default behavior is to concat the last 2 elements of the FQN if they are unique, otherwise concat
+	// all the elements of the FQN without any separator
+	useFQNForSwaggerName bool
+
+	// allowColonFinalSegments determines whether colons are permitted
+	// in the final segment of a path.
+	allowColonFinalSegments bool
+
+	// useGoTemplate determines whether you want to use GO templates
+	// in your protofile comments
+	useGoTemplate bool
+
+	// enumsAsInts render enum as integer, as opposed to string
+	enumsAsInts bool
+
+	// disableDefaultErrors disables the generation of the default error types.
+	// This is useful for users who have defined custom error handling.
+	disableDefaultErrors bool
+
+	// simpleOperationIDs removes the service prefix from the generated
+	// operationIDs. This risks generating duplicate operationIDs.
+	simpleOperationIDs bool
+
+	// warnOnUnboundMethods causes the registry to emit warning logs if an RPC method
+	// has no HttpRule annotation.
+	warnOnUnboundMethods bool
+
+	// generateUnboundMethods causes the registry to generate proxy methods even for
+	// RPC methods that have no HttpRule annotation.
+	generateUnboundMethods bool
+}
+
+type repeatedFieldSeparator struct {
+	name string
+	sep  rune
 }
 
 // NewRegistry returns a new Registry.
@@ -51,6 +110,10 @@ func NewRegistry() *Registry {
 		pkgMap:            make(map[string]string),
 		pkgAliases:        make(map[string]string),
 		externalHTTPRules: make(map[string][]*annotations.HttpRule),
+		repeatedPathParamSeparator: repeatedFieldSeparator{
+			name: "csv",
+			sep:  ',',
+		},
 	}
 }
 
@@ -220,6 +283,29 @@ func (r *Registry) AddExternalHTTPRule(qualifiedMethodName string, rule *annotat
 	r.externalHTTPRules[qualifiedMethodName] = append(r.externalHTTPRules[qualifiedMethodName], rule)
 }
 
+// UnboundExternalHTTPRules returns the list of External HTTPRules
+// which does not have a matching method in the registry
+func (r *Registry) UnboundExternalHTTPRules() []string {
+	allServiceMethods := make(map[string]struct{})
+	for _, f := range r.files {
+		for _, s := range f.GetService() {
+			svc := &Service{File: f, ServiceDescriptorProto: s}
+			for _, m := range s.GetMethod() {
+				method := &Method{Service: svc, MethodDescriptorProto: m}
+				allServiceMethods[method.FQMN()] = struct{}{}
+			}
+		}
+	}
+
+	var missingMethods []string
+	for httpRuleMethod := range r.externalHTTPRules {
+		if _, ok := allServiceMethods[httpRuleMethod]; !ok {
+			missingMethods = append(missingMethods, httpRuleMethod)
+		}
+	}
+	return missingMethods
+}
+
 // AddPkgMap adds a mapping from a .proto file to proto package name.
 func (r *Registry) AddPkgMap(file, protoPkg string) {
 	r.pkgMap[file] = protoPkg
@@ -295,6 +381,165 @@ func (r *Registry) GetAllFQENs() []string {
 // body or fail loading if encountered.
 func (r *Registry) SetAllowDeleteBody(allow bool) {
 	r.allowDeleteBody = allow
+}
+
+// SetAllowMerge controls whether generation one swagger file out of multiple protos
+func (r *Registry) SetAllowMerge(allow bool) {
+	r.allowMerge = allow
+}
+
+// IsAllowMerge whether generation one swagger file out of multiple protos
+func (r *Registry) IsAllowMerge() bool {
+	return r.allowMerge
+}
+
+// SetMergeFileName controls the target swagger file name out of multiple protos
+func (r *Registry) SetMergeFileName(mergeFileName string) {
+	r.mergeFileName = mergeFileName
+}
+
+// SetAllowRepeatedFieldsInBody controls whether repeated field can be used
+// in `body` and `response_body` (`google.api.http` annotation option) field path or not
+func (r *Registry) SetAllowRepeatedFieldsInBody(allow bool) {
+	r.allowRepeatedFieldsInBody = allow
+}
+
+// IsAllowRepeatedFieldsInBody checks if repeated field can be used
+// in `body` and `response_body` (`google.api.http` annotation option) field path or not
+func (r *Registry) IsAllowRepeatedFieldsInBody() bool {
+	return r.allowRepeatedFieldsInBody
+}
+
+// SetIncludePackageInTags controls whether the package name defined in the `package` directive
+// in the proto file can be prepended to the gRPC service name in the `Tags` field of every operation.
+func (r *Registry) SetIncludePackageInTags(allow bool) {
+	r.includePackageInTags = allow
+}
+
+// IsIncludePackageInTags checks whether the package name defined in the `package` directive
+// in the proto file can be prepended to the gRPC service name in the `Tags` field of every operation.
+func (r *Registry) IsIncludePackageInTags() bool {
+	return r.includePackageInTags
+}
+
+// GetRepeatedPathParamSeparator returns a rune spcifying how
+// path parameter repeated fields are separated.
+func (r *Registry) GetRepeatedPathParamSeparator() rune {
+	return r.repeatedPathParamSeparator.sep
+}
+
+// GetRepeatedPathParamSeparatorName returns the name path parameter repeated
+// fields repeatedFieldSeparator. I.e. 'csv', 'pipe', 'ssv' or 'tsv'
+func (r *Registry) GetRepeatedPathParamSeparatorName() string {
+	return r.repeatedPathParamSeparator.name
+}
+
+// SetRepeatedPathParamSeparator sets how path parameter repeated fields are
+// separated. Allowed names are 'csv', 'pipe', 'ssv' and 'tsv'.
+func (r *Registry) SetRepeatedPathParamSeparator(name string) error {
+	var sep rune
+	switch name {
+	case "csv":
+		sep = ','
+	case "pipes":
+		sep = '|'
+	case "ssv":
+		sep = ' '
+	case "tsv":
+		sep = '\t'
+	default:
+		return fmt.Errorf("unknown repeated path parameter separator: %s", name)
+	}
+	r.repeatedPathParamSeparator = repeatedFieldSeparator{
+		name: name,
+		sep:  sep,
+	}
+	return nil
+}
+
+// SetUseJSONNamesForFields sets useJSONNamesForFields
+func (r *Registry) SetUseJSONNamesForFields(use bool) {
+	r.useJSONNamesForFields = use
+}
+
+// GetUseJSONNamesForFields returns useJSONNamesForFields
+func (r *Registry) GetUseJSONNamesForFields() bool {
+	return r.useJSONNamesForFields
+}
+
+// SetUseFQNForSwaggerName sets useFQNForSwaggerName
+func (r *Registry) SetUseFQNForSwaggerName(use bool) {
+	r.useFQNForSwaggerName = use
+}
+
+// GetAllowColonFinalSegments returns allowColonFinalSegments
+func (r *Registry) GetAllowColonFinalSegments() bool {
+	return r.allowColonFinalSegments
+}
+
+// SetAllowColonFinalSegments sets allowColonFinalSegments
+func (r *Registry) SetAllowColonFinalSegments(use bool) {
+	r.allowColonFinalSegments = use
+}
+
+// GetUseFQNForSwaggerName returns useFQNForSwaggerName
+func (r *Registry) GetUseFQNForSwaggerName() bool {
+	return r.useFQNForSwaggerName
+}
+
+// GetMergeFileName return the target merge swagger file name
+func (r *Registry) GetMergeFileName() string {
+	return r.mergeFileName
+}
+
+// SetUseGoTemplate sets useGoTemplate
+func (r *Registry) SetUseGoTemplate(use bool) {
+	r.useGoTemplate = use
+}
+
+// GetUseGoTemplate returns useGoTemplate
+func (r *Registry) GetUseGoTemplate() bool {
+	return r.useGoTemplate
+}
+
+// SetEnumsAsInts set enumsAsInts
+func (r *Registry) SetEnumsAsInts(enumsAsInts bool) {
+	r.enumsAsInts = enumsAsInts
+}
+
+// GetEnumsAsInts returns enumsAsInts
+func (r *Registry) GetEnumsAsInts() bool {
+	return r.enumsAsInts
+}
+
+// SetDisableDefaultErrors sets disableDefaultErrors
+func (r *Registry) SetDisableDefaultErrors(use bool) {
+	r.disableDefaultErrors = use
+}
+
+// GetDisableDefaultErrors returns disableDefaultErrors
+func (r *Registry) GetDisableDefaultErrors() bool {
+	return r.disableDefaultErrors
+}
+
+// SetSimpleOperationIDs sets simpleOperationIDs
+func (r *Registry) SetSimpleOperationIDs(use bool) {
+	r.simpleOperationIDs = use
+}
+
+// GetSimpleOperationIDs returns simpleOperationIDs
+func (r *Registry) GetSimpleOperationIDs() bool {
+	return r.simpleOperationIDs
+}
+
+// SetWarnOnUnboundMethods sets warnOnUnboundMethods
+func (r *Registry) SetWarnOnUnboundMethods(warn bool) {
+	r.warnOnUnboundMethods = warn
+}
+
+// SetGenerateUnboundMethods sets generateUnboundMethods
+func (r *Registry) SetGenerateUnboundMethods(generate bool) {
+	r.generateUnboundMethods = generate
 }
 
 // sanitizePackageName replaces unallowed character in package name

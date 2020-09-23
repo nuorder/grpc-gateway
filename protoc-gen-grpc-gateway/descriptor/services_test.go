@@ -18,7 +18,10 @@ func compilePath(t *testing.T, path string) httprule.Template {
 }
 
 func testExtractServices(t *testing.T, input []*descriptor.FileDescriptorProto, target string, wantSvcs []*Service) {
-	reg := NewRegistry()
+	testExtractServicesWithRegistry(t, NewRegistry(), input, target, wantSvcs)
+}
+
+func testExtractServicesWithRegistry(t *testing.T, reg *Registry, input []*descriptor.FileDescriptorProto, target string, wantSvcs []*Service) {
 	for _, file := range input {
 		reg.loadFile(file)
 	}
@@ -99,11 +102,11 @@ func testExtractServices(t *testing.T, input []*descriptor.FileDescriptorProto, 
 			}
 			for ; k < len(meth.Bindings); k++ {
 				got := meth.Bindings[k]
-				t.Errorf("svcs[%d].Methods[%d].Bindings[%d] = %q; want it to be missing; input = %v", i, j, k, got, input)
+				t.Errorf("svcs[%d].Methods[%d].Bindings[%d] = %v; want it to be missing; input = %v", i, j, k, got, input)
 			}
 			for ; k < len(wantMeth.Bindings); k++ {
 				want := wantMeth.Bindings[k]
-				t.Errorf("svcs[%d].Methods[%d].Bindings[%d] missing; want %q; input = %v", i, j, k, want, input)
+				t.Errorf("svcs[%d].Methods[%d].Bindings[%d] missing; want %v; input = %v", i, j, k, want, input)
 			}
 		}
 		for ; j < len(svc.Methods); j++ {
@@ -217,6 +220,133 @@ func TestExtractServicesSimple(t *testing.T) {
 
 	crossLinkFixture(file)
 	testExtractServices(t, []*descriptor.FileDescriptorProto{&fd}, "path/to/example.proto", file.Services)
+}
+
+func TestExtractServicesWithoutAnnotation(t *testing.T) {
+	src := `
+		name: "path/to/example.proto",
+		package: "example"
+		message_type <
+			name: "StringMessage"
+			field <
+				name: "string"
+				number: 1
+				label: LABEL_OPTIONAL
+				type: TYPE_STRING
+			>
+		>
+		service <
+			name: "ExampleService"
+			method <
+				name: "Echo"
+				input_type: "StringMessage"
+				output_type: "StringMessage"
+			>
+		>
+	`
+	var fd descriptor.FileDescriptorProto
+	if err := proto.UnmarshalText(src, &fd); err != nil {
+		t.Fatalf("proto.UnmarshalText(%s, &fd) failed with %v; want success", src, err)
+	}
+	msg := &Message{
+		DescriptorProto: fd.MessageType[0],
+		Fields: []*Field{
+			{
+				FieldDescriptorProto: fd.MessageType[0].Field[0],
+			},
+		},
+	}
+	file := &File{
+		FileDescriptorProto: &fd,
+		GoPkg: GoPackage{
+			Path: "path/to/example.pb",
+			Name: "example_pb",
+		},
+		Messages: []*Message{msg},
+		Services: []*Service{
+			{
+				ServiceDescriptorProto: fd.Service[0],
+				Methods: []*Method{
+					{
+						MethodDescriptorProto: fd.Service[0].Method[0],
+						RequestType:           msg,
+						ResponseType:          msg,
+					},
+				},
+			},
+		},
+	}
+
+	crossLinkFixture(file)
+	testExtractServices(t, []*descriptor.FileDescriptorProto{&fd}, "path/to/example.proto", file.Services)
+}
+
+func TestExtractServicesGenerateUnboundMethods(t *testing.T) {
+	src := `
+		name: "path/to/example.proto",
+		package: "example"
+		message_type <
+			name: "StringMessage"
+			field <
+				name: "string"
+				number: 1
+				label: LABEL_OPTIONAL
+				type: TYPE_STRING
+			>
+		>
+		service <
+			name: "ExampleService"
+			method <
+				name: "Echo"
+				input_type: "StringMessage"
+				output_type: "StringMessage"
+			>
+		>
+	`
+	var fd descriptor.FileDescriptorProto
+	if err := proto.UnmarshalText(src, &fd); err != nil {
+		t.Fatalf("proto.UnmarshalText(%s, &fd) failed with %v; want success", src, err)
+	}
+	msg := &Message{
+		DescriptorProto: fd.MessageType[0],
+		Fields: []*Field{
+			{
+				FieldDescriptorProto: fd.MessageType[0].Field[0],
+			},
+		},
+	}
+	file := &File{
+		FileDescriptorProto: &fd,
+		GoPkg: GoPackage{
+			Path: "path/to/example.pb",
+			Name: "example_pb",
+		},
+		Messages: []*Message{msg},
+		Services: []*Service{
+			{
+				ServiceDescriptorProto: fd.Service[0],
+				Methods: []*Method{
+					{
+						MethodDescriptorProto: fd.Service[0].Method[0],
+						RequestType:           msg,
+						ResponseType:          msg,
+						Bindings: []*Binding{
+							{
+								PathTmpl:   compilePath(t, "/example.ExampleService/Echo"),
+								HTTPMethod: "POST",
+								Body:       &Body{FieldPath: nil},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	crossLinkFixture(file)
+	reg := NewRegistry()
+	reg.SetGenerateUnboundMethods(true)
+	testExtractServicesWithRegistry(t, reg, []*descriptor.FileDescriptorProto{&fd}, "path/to/example.proto", file.Services)
 }
 
 func TestExtractServicesCrossPackage(t *testing.T) {
@@ -1097,7 +1227,7 @@ func TestResolveFieldPath(t *testing.T) {
 		if err != nil {
 			t.Fatalf("reg.LookupFile(%q) failed with %v; want success; on file=%s", file.GetName(), err, spec.src)
 		}
-		_, err = reg.resolveFieldPath(f.Messages[0], spec.path)
+		_, err = reg.resolveFieldPath(f.Messages[0], spec.path, false)
 		if got, want := err != nil, spec.wantErr; got != want {
 			if want {
 				t.Errorf("reg.resolveFiledPath(%q, %q) succeeded; want an error", f.Messages[0].GetName(), spec.path)
